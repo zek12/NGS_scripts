@@ -3,14 +3,17 @@ import vcf
 
 import argparse, textwrap, os
 
-# parser = argparse.ArgumentParser(description='Filter variants for: PTMs 95% (=LOFTEE HC), missense CADD PHRED > 30, ExAC MAF NFE < 1%')
+# parser = argparse.ArgumentParser(description='Filter variants for: PTMs 95% (LOFTEE LoF=HC), missense CADD PHRED > 20, ExAC MAF NFE < 1%, repeat regions and monomorphic loci.')
 parser = argparse.ArgumentParser(
 	formatter_class = argparse.RawDescriptionHelpFormatter,
 	description = textwrap.dedent('''\
-		Filter variants for:
-			- PTMs 95% (LOFTEE LoF=HC)
-			- missense CADD PHRED > 30
-			Also removes variants with ExAC MAF NFE < 1%, monomorphic sites, or FILTER column (repeat region)
+		Retains the following variants:
+			- Tier1: PTMs 95% (LOFTEE LoF=HC)
+			- Tier2: missense CADD PHRED > 20
+			Both Tier1 and Tier2 must pass the following QC:
+			- ExAC MAF NFE < 1%
+			- removes variants falling in repeat regions (FILTER=repeat_region)
+			- removes monomorphic loci.
 			'''))
 
 parser.add_argument('input_vcf', metavar='i', nargs=1, help='input VCF (full path)')
@@ -29,10 +32,19 @@ parser.add_argument('input_vcf', metavar='i', nargs=1, help='input VCF (full pat
 args = parser.parse_args()
 
 input_vcf = args.input_vcf[0]
-output_vcf = os.path.dirname(input_vcf) + "/" + os.path.basename(input_vcf)[:-3] + "deleterious_only.vcf"
+if os.path.dirname(input_vcf) == '':
+	full_path = "."
+else:
+	full_path = os.path.dirname(input_vcf)
+
+output_vcf_Tier1 = full_path + "/" + os.path.basename(input_vcf)[:-3] + "Tier1.bis.vcf"
+output_vcf_Tier1_Tier2 = full_path + "/" + os.path.basename(input_vcf)[:-3] + "Tier1_Tier2.bis.vcf"
+
 
 vcf_reader = vcf.Reader(open(input_vcf, 'r'))
-vcf_writer = vcf.Writer(open(output_vcf, 'w'), vcf_reader)
+vcf_writer_Tier1 = vcf.Writer(open(output_vcf_Tier1, 'w'), vcf_reader)
+vcf_writer_Tier1_Tier2 = vcf.Writer(open(output_vcf_Tier1_Tier2, 'w'), vcf_reader)
+
 for record in vcf_reader:
 
 	if str(record.ALT[0]) == '*':
@@ -52,8 +64,6 @@ for record in vcf_reader:
 	CADD_PHRED = str(record.INFO['CSQ'][0]).split('|')[44]
 	REVEL = str(record.INFO['CSQ'][0]).split('|')[46]
 	gnomAD_exomes_AF_nfe = str(record.INFO['CSQ'][0]).split('|')[48]
-	FILTER = ",".join(record.FILTER)
-
 
 	# print record.get_hets()
 	# print record.get_hom_alts()
@@ -69,26 +79,30 @@ for record in vcf_reader:
 	l_hom_alts = ",".join([h.sample for h in record.get_hom_alts()])
 
 
+	is_Tier1 = False
+	is_Tier2 = False
 
-	if impact == 'HIGH' and LoF == "HC" and (ExAC_AF_NFE == "" or float(ExAC_AF_NFE) <= 0.01):
-		pass_filter = True
-	elif impact == 'MODERATE' and mut_type.find('missense') != -1 and (CADD_PHRED == "" or float(CADD_PHRED) > 30) and (ExAC_AF_NFE == "" or float(ExAC_AF_NFE) <= 0.01):
-		pass_filter = True
-	else:
-		pass_filter = False
+	if impact == 'HIGH' and LoF == "HC":
+		is_Tier1 = True
+	elif impact == 'MODERATE' and mut_type.find('missense') != -1 and (CADD_PHRED == "" or float(CADD_PHRED) > 20):
+		is_Tier2 = True
 
 	# check also if variant is monomorphic
 	n = len(record.samples)
 	is_monomorphic = (record.num_het == n or record.num_hom_ref == n or record.num_hom_alt == n)
-	pass_filter = pass_filter and not is_monomorphic and FILTER == ""
+	FILTER = ",".join(record.FILTER) # if falls in a repeat region, then FILTER='repeat_region'
+	pass_filter = (is_Tier1 or is_Tier2) and (ExAC_AF_NFE == "" or float(ExAC_AF_NFE) <= 0.01) and FILTER == "" and not is_monomorphic
 
 	if pass_filter:
 		# print record.CHROM + '\t' + str(record.POS) + '\t' + str(record.ID) + '\t' + record.REF + '\t' + str(record.ALT[0]) + '\tFILTER=' + FILTER + '\tTYPE=' + mut_type + '\tIMPACT=' + impact + '\tGENE=' + gene + '\tCLIN_SIG=' + clin_sig + '\tLoF=' + LoF + '\tPosition=' + position + '\tExAC_MAF=' + ExAC_AF_NFE + '\tgnomAD_exomes_AF_nfe=' + gnomAD_exomes_AF_nfe + '\tCADD_PHRED=' + CADD_PHRED + '\tREVEL=' + REVEL + "\tHET=" + l_het + "\tHOM_ALT=" + l_hom_alts
-		vcf_writer.write_record(record)
+		if is_Tier1:
+			vcf_writer_Tier1.write_record(record)
+			vcf_writer_Tier1_Tier2.write_record(record)
+		elif is_Tier2:
+			vcf_writer_Tier1_Tier2.write_record(record)
 
 
 
-# python filter_variants.py /path_to_input_vcf/annotated.vcf
 
 
 
