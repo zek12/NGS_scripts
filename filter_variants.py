@@ -17,6 +17,7 @@ parser = argparse.ArgumentParser(
 			'''))
 
 parser.add_argument('input_vcf', metavar='i', nargs=1, help='input VCF (full path)')
+parser.add_argument('--g', metavar = 'GENE', help = 'output variants only in this gene')
 
 # parser.add_argument('output_vcf', metavar='o', nargs=1, help='output VCF (full path)')
 
@@ -37,8 +38,15 @@ if os.path.dirname(input_vcf) == '':
 else:
 	full_path = os.path.dirname(input_vcf)
 
-output_vcf_Tier1 = full_path + "/" + os.path.basename(input_vcf)[:-3] + "Tier1.bis.vcf"
-output_vcf_Tier1_Tier2 = full_path + "/" + os.path.basename(input_vcf)[:-3] + "Tier1_Tier2.bis.vcf"
+
+g = args.g
+
+if g is None:
+	output_vcf_Tier1 = full_path + "/" + os.path.basename(input_vcf)[:-3] + "Tier1.vcf"
+	output_vcf_Tier1_Tier2 = full_path + "/" + os.path.basename(input_vcf)[:-3] + "Tier1_Tier2.vcf"
+else:
+	output_vcf_Tier1 = full_path + "/" + os.path.basename(input_vcf)[:-3] + g + ".Tier1.vcf"
+	output_vcf_Tier1_Tier2 = full_path + "/" + os.path.basename(input_vcf)[:-3] + g + ".Tier1_Tier2.vcf"
 
 
 vcf_reader = vcf.Reader(open(input_vcf, 'r'))
@@ -92,6 +100,8 @@ for record in vcf_reader:
 	is_monomorphic = (record.num_het == n or record.num_hom_ref == n or record.num_hom_alt == n)
 	FILTER = ",".join(record.FILTER) # if falls in a repeat region, then FILTER='repeat_region'
 	pass_filter = (is_Tier1 or is_Tier2) and (ExAC_AF_NFE == "" or float(ExAC_AF_NFE) <= 0.01) and FILTER == "" and not is_monomorphic
+	if not g is None:
+		pass_filter = pass_filter and (gene == g)
 
 	if pass_filter:
 		# print record.CHROM + '\t' + str(record.POS) + '\t' + str(record.ID) + '\t' + record.REF + '\t' + str(record.ALT[0]) + '\tFILTER=' + FILTER + '\tTYPE=' + mut_type + '\tIMPACT=' + impact + '\tGENE=' + gene + '\tCLIN_SIG=' + clin_sig + '\tLoF=' + LoF + '\tPosition=' + position + '\tExAC_MAF=' + ExAC_AF_NFE + '\tgnomAD_exomes_AF_nfe=' + gnomAD_exomes_AF_nfe + '\tCADD_PHRED=' + CADD_PHRED + '\tREVEL=' + REVEL + "\tHET=" + l_het + "\tHOM_ALT=" + l_hom_alts
@@ -102,6 +112,7 @@ for record in vcf_reader:
 			vcf_writer_Tier1_Tier2.write_record(record)
 
 
+# python filter_variants.py input.vcf --g ATM
 
 
 
