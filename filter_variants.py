@@ -4,6 +4,7 @@ import vcf
 import argparse, textwrap, os
 
 
+
 # parser = argparse.ArgumentParser(description='Filter variants for: PTMs 95% (LOFTEE LoF=HC), missense CADD PHRED > 20, ExAC MAF NFE < 1%, repeat regions and monomorphic loci.')
 parser = argparse.ArgumentParser(
 	formatter_class = argparse.RawDescriptionHelpFormatter,
