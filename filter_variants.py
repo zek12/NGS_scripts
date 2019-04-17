@@ -16,7 +16,7 @@ parser = argparse.ArgumentParser(
 			- removes monomorphic loci
 			'''))
 
-parser.add_argument('input_vcf', help = 'input VCF (full path)', metavar = '<input_vcf>', nargs = 1)
+parser.add_argument('input_vcf', help = 'input VCF or bgzipped VCF (can be relative or absolute path)', metavar = '<input_vcf>', nargs = 1)
 parser.add_argument('-g', help = 'output variants only in this gene', metavar = 'GENE')
 parser.add_argument('-t1', help = 'include Tier1 variants', action = 'store_true')
 parser.add_argument('-t2', help = 'include Tier2 variants', action = 'store_true')
@@ -112,11 +112,6 @@ for record in vcf_reader:
 
 	pass_filter = (ExAC_AF_NFE == "-" or float(ExAC_AF_NFE) <= 0.01) and FILTER == "" and not is_monomorphic
 
-	# if str(record.POS) == "9471381":
-	# 	print record.INFO
-	# 	print is_Tier1, LoF_info
-	# 	print t1
-	# 	exit()
 
 	if not g is None:
 		pass_filter = pass_filter and (gene == g)
