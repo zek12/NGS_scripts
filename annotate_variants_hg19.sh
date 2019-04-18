@@ -64,7 +64,7 @@ cd $output_folder/temporary_files
 
 
 # 1) check if input VCF contains chromosome: if so, extract specific chromosome; otherwise, exit.
-echo "$(date '+%d/%m/%y_%H:%M:%S'),--- STEP 1/7: Extracting chromosome $chr ---"
+echo "$(date '+%d/%m/%y_%H:%M:%S'),--- STEP 1/9: Extracting chromosome $chr ---"
 if (( $(vcftools --gzvcf $input_file --chr $chr --stdout --recode --recode-INFO-all | bcftools view -H | wc -l) == 0 ))
 then
 	# try extracting including 'chr'
@@ -85,31 +85,61 @@ fi
 
 
 # 2) sort VCF by position
-echo "$(date '+%d/%m/%y_%H:%M:%S'),--- STEP 2/7: Sorting VCF ---"
+echo "$(date '+%d/%m/%y_%H:%M:%S'),--- STEP 2/9: Sorting VCF ---"
 vcf-sort $chr.vcf > $chr.sorted.vcf
 
 
 # 3) split multi-allelic into biallelic
-echo "$(date '+%d/%m/%y_%H:%M:%S'),--- STEP 3/7: Splitting multi-allelic into biallelic ---"
+echo "$(date '+%d/%m/%y_%H:%M:%S'),--- STEP 3/9: Splitting multi-allelic into biallelic ---"
 bcftools norm -m - $chr.sorted.vcf -O v -o $chr.biallelic.vcf
 
 # 4) remove ALT = *
-echo "$(date '+%d/%m/%y_%H:%M:%S'),--- STEP 4/7: Removing ALT=* ---"
+echo "$(date '+%d/%m/%y_%H:%M:%S'),--- STEP 4/9: Removing ALT=* ---"
 bcftools view -h $chr.biallelic.vcf > header.$chr
 bcftools view -H $chr.biallelic.vcf | grep -v -P '\t\*\t' > body.$chr
 cat header.$chr body.$chr > $chr.biallelic.no_star.vcf
 rm header.$chr body.$chr
 
 
+# 5) add rsID
+echo "$(date '+%d/%m/%y_%H:%M:%S'),--- STEP 5/9: Add rsID ---"
+bcftools annotate \
+	--output $chr.biallelic.no_star.no_ids.vcf.gz \
+	--output-type z \
+	--remove ID \
+	$chr.biallelic.no_star.vcf
+tabix -p vcf $chr.biallelic.no_star.no_ids.vcf.gz
 
-# 5) flag repeated regions
-echo "$(date '+%d/%m/%y_%H:%M:%S'),--- STEP 5/7: Flagging repeat regions ---"
+bcftools annotate \
+	--annotations /path_to_dbSNP_rsids/GRCh37/All_20170710.vcf.gz \
+	--columns ID \
+	--output $chr.biallelic.no_star.rsIDannotated.vcf \
+	--output-type v \
+	$chr.biallelic.no_star.no_ids.vcf.gz
 
+rm $chr.biallelic.no_star.no_ids.*
+
+
+# 6) flag repeated regions
+echo "$(date '+%d/%m/%y_%H:%M:%S'),--- STEP 6/9: Flagging repeat regions ---"
+
+# optional: correct contig lengths
+# useful links about sed:
+# https://unix.stackexchange.com/questions/32908/how-to-insert-the-content-of-a-file-into-another-file-before-a-pattern-marker
+# https://askubuntu.com/questions/76808/how-do-i-use-variables-in-a-sed-command
+echo "$(date '+%d/%m/%y_%H:%M:%S'),--- Update contigs in VCF using $ref_genome ---"
+awk '{ printf "##contig=<ID=%s,length=%d>\n", $1, $2 }' $ref_genome.fai > $chr.contigs
+sed '/##contig=/d' $chr.biallelic.no_star.vcf > $chr.biallelic.no_star.contigs_corrected.vcf
+sed -n -i -e "/^#CHROM/r $chr.contigs" -e 1x -e '2,${x;p}' -e '${x;p}' $chr.biallelic.no_star.contigs_corrected.vcf
+mv $chr.biallelic.no_star.contigs_corrected.vcf $chr.biallelic.no_star.vcf
+
+
+echo "$(date '+%d/%m/%y_%H:%M:%S'),--- Running GATK VariantFiltration ---"
 java -jar /apps/gatk/3.7-0/GenomeAnalysisTK.jar \
 	-T VariantFiltration \
 	-R $ref_genome \
 	-V $chr.biallelic.no_star.vcf \
-	-mask /path_to_repeat_regions/all_repeats.sorted.bed \
+	-mask /path_to_repeat_regions/GRCh37/all_repeats.sorted.bed \
 	-maskName 'repeat_region' \
 	-o $chr.biallelic.no_star.repeat_flagged.vcf
 
@@ -119,20 +149,26 @@ sed -i -e 's/##FORMAT=<ID=AD,Number=R/##FORMAT=<ID=AD,Number=./g' $chr.biallelic
 
 
 
-# 6) add ClinVar annotation in INFO/CLNSIG
-echo "$(date '+%d/%m/%y_%H:%M:%S'),--- STEP 6/7: Adding ClinVar INFO/CLNSIG ---"
+# 7) add ClinVar annotation in INFO/CLNSIG
+echo "$(date '+%d/%m/%y_%H:%M:%S'),--- STEP 7/9: Adding ClinVar INFO/CLNSIG ---"
 bgzip $chr.biallelic.no_star.repeat_flagged.vcf -f
 tabix -p vcf $chr.biallelic.no_star.repeat_flagged.vcf.gz -f
 bcftools annotate \
-	--annotations /path_to_clinvar_annotations/clinvar_20181028.vcf.gz \
+	--annotations /path_to_ClinVar/GRCh37/clinvar_20181028.vcf.gz \
 	--columns "INFO/CLNSIG" \
 	--output $chr.biallelic.no_star.repeat_flagged.clinvar.vcf --output-type v \
 	$chr.biallelic.no_star.repeat_flagged.vcf.gz
 
-# 7) annotate using VEP
-echo "$(date '+%d/%m/%y_%H:%M:%S'),--- STEP 7/7: Annotating with VEP ---"
+# 8) annotate using VEP
+echo "$(date '+%d/%m/%y_%H:%M:%S'),--- STEP 8/9: Annotating with VEP ---"
 # remove INFO/CSQ
-bcftools annotate -x INFO/CSQ $chr.biallelic.no_star.repeat_flagged.clinvar.vcf -O v -o $chr.biallelic.no_star.repeat_flagged.clinvar.no_vep.vcf
+if (( $(bcftools view -h $chr.biallelic.no_star.repeat_flagged.clinvar.vcf | grep "##INFO=<ID=CSQ" | wc -l) == 0 ))
+then
+	cp $chr.biallelic.no_star.repeat_flagged.clinvar.vcf $chr.biallelic.no_star.repeat_flagged.clinvar.no_vep.vcf
+else	
+	bcftools annotate -x INFO/CSQ $chr.biallelic.no_star.repeat_flagged.clinvar.vcf -O v -o $chr.biallelic.no_star.repeat_flagged.clinvar.no_vep.vcf
+fi
+
 
 # GRCh37
 /path_to_vep/ensembl-vep/vep \
@@ -141,9 +177,9 @@ bcftools annotate -x INFO/CSQ $chr.biallelic.no_star.repeat_flagged.clinvar.vcf 
 	-o $chr.biallelic.no_star.repeat_flagged.clinvar.VEP.vcf --vcf \
 	--dir_plugins /path_to_vep/ensembl-vep/loftee \
 	--plugin LoF,human_ancestor_fa:/path_to_vep/ensembl-vep/loftee/human_ancestor.fa.rz,filter_position:0.05 \
-	--plugin ExAC,/path_to_ExAC_mafs/ExAC.r1.sites.vep.vcf.gz \
-	-custom /path_to_gnomAD_mafs/gnomad.exomes.r2.1.sites.vcf.gz,gnomAD_exomes,vcf,exact,0,AF_nfe \
-	--plugin CADD,/path_to_CADD_scores/whole_genome_SNVs.tsv.gz,/path_to_CADD_scores/InDels.tsv.gz \
+	--plugin ExAC,/path_to_ExAC_mafs/GRCh37/ExAC.r1.sites.vep.vcf.gz \
+	-custom /path_to_gnomAD_mafs/GRCh37/gnomad.exomes.r2.1.sites.vcf.gz,gnomAD_exomes,vcf,exact,0,AF_nfe \
+	--plugin CADD,/path_to_CADD_scores/GRCh37/whole_genome_SNVs.tsv.gz,/path_to_CADD_scores/GRCh37/InDels.tsv.gz \
 	--plugin REVEL,/path_to_REVEL_scores/new_tabbed_revel.tsv.gz \
 	--cache --force_overwrite --poly b --sift b --gene_phenotype --symbol --pick_allele --port 3337
 	
@@ -151,6 +187,13 @@ bcftools annotate -x INFO/CSQ $chr.biallelic.no_star.repeat_flagged.clinvar.vcf 
 # more info: https://www.ensembl.org/info/docs/tools/vep/script/vep_example.html#gnomad, section "gnomAD and ExAC"
 # --af_gnomad adds gnomAD exomes MAFs v2.0.1, in INFO/CSQ (gnomAD_NFE_AF)
 # -custom adds gnomAD exomes MAFs v2.1, in INFO/CSQ, as the last value (gnomAD_exomes_AF_nfe)
+# bcftools view -h 2.biallelic.no_star.repeat_flagged.clinvar.VEP.vcf | grep gnomAD_exomes_AF_
+# bcftools view -h 2.biallelic.no_star.repeat_flagged.clinvar.VEP.vcf | grep CSQ
+# grep rs2303426 2.biallelic.no_star.repeat_flagged.clinvar.VEP.vcf | cut -f1-8
+# grep rs63750466 2.biallelic.no_star.repeat_flagged.clinvar.VEP.vcf | cut -f1-8
+# grep rs35898375 2.biallelic.no_star.repeat_flagged.clinvar.VEP.vcf | cut -f1-8
+
+
 
 
 # add --port 3337 to use Assembly GRCh37 for VEP
@@ -159,13 +202,14 @@ bcftools annotate -x INFO/CSQ $chr.biallelic.no_star.repeat_flagged.clinvar.vcf 
 # REVEL scores are in GRCh37
 
 
-# 8) remove field FORMAT/PL from VCF, as in the filtering step, PyVCF returns an error when reading the VCF (cannot convert empty PL to Float)
+# 9) remove field FORMAT/PL from VCF, as in the filtering step, PyVCF returns an error when reading the VCF (cannot convert empty PL to Float)
+echo "$(date '+%d/%m/%y_%H:%M:%S'),--- STEP 9/9: Annotating with VEP ---"
 bcftools annotate -x FORMAT/PL $chr.biallelic.no_star.repeat_flagged.clinvar.VEP.vcf -O v -o $chr.biallelic.no_star.repeat_flagged.clinvar.VEP.noPL.vcf
 
 
 echo "$(date '+%d/%m/%y_%H:%M:%S'),--- DONE ---"
 
-# 9) concat all chromosomes
+# 10) concat all chromosomes
 # bcftools concat -O v -o ../annotated.vcf \
 # 1.biallelic.no_star.repeat_flagged.clinvar.VEP.noPL.vcf \
 # 2.biallelic.no_star.repeat_flagged.clinvar.VEP.noPL.vcf \
