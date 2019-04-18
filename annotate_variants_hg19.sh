@@ -203,7 +203,7 @@ fi
 
 
 # 9) remove field FORMAT/PL from VCF, as in the filtering step, PyVCF returns an error when reading the VCF (cannot convert empty PL to Float)
-echo "$(date '+%d/%m/%y_%H:%M:%S'),--- STEP 9/9: Annotating with VEP ---"
+echo "$(date '+%d/%m/%y_%H:%M:%S'),--- STEP 9/9: Removing FORMAT/PL ---"
 bcftools annotate -x FORMAT/PL $chr.biallelic.no_star.repeat_flagged.clinvar.VEP.vcf -O v -o $chr.biallelic.no_star.repeat_flagged.clinvar.VEP.noPL.vcf
 
 
