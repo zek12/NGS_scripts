@@ -135,7 +135,7 @@ mv $chr.biallelic.no_star.contigs_corrected.vcf $chr.biallelic.no_star.vcf
 
 
 echo "$(date '+%d/%m/%y_%H:%M:%S'),--- Running GATK VariantFiltration ---"
-java -jar /apps/gatk/3.7-0/GenomeAnalysisTK.jar \
+java -jar GenomeAnalysisTK.jar \
 	-T VariantFiltration \
 	-R $ref_genome \
 	-V $chr.biallelic.no_star.vcf \
@@ -242,7 +242,7 @@ echo "$(date '+%d/%m/%y_%H:%M:%S'),--- DONE ---"
 # cd ..
 # bgzip annotated.vcf
 # tabix -p vcf annotated.vcf.gz
-# sort: java -jar /apps/picard-tools/2.0.1/picard.jar SortVcf I=annotated.vcf.gz O=annotated.sorted.vcf
+# sort: java -jar picard.jar SortVcf I=annotated.vcf.gz O=annotated.sorted.vcf
 # sort: vcf-sort annotated.vcf.gz > annotated.sorted.vcf
 
 # python filter_variants.py annotated.vcf
