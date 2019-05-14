@@ -184,7 +184,7 @@ bcftools annotate \
 	$chr.biallelic.no_star.GRCh38_pos.rsIDannotated.contigs_corrected.repeat_flagged.vcf.gz
 
 
-# 10) annotate using VEP
+# 10) Do the liftover
 echo "$(date '+%d/%m/%y_%H:%M:%S'),--- STEP 10/12: Waiting... Do the the liftover to hg19 first ---"
 # run liftOver.R to generate $chr.biallelic.no_star.GRCh38_pos.rsIDannotated.contigs_corrected.repeat_flagged.clinvar.lifted_rtracklayer.vcf
 
