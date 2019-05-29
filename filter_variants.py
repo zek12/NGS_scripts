@@ -107,7 +107,7 @@ for record in vcf_reader:
 
 	# check monomorphic
 	n = len(record.samples)
-	is_monomorphic = (record.num_het == n or record.num_hom_ref == n or record.num_hom_alt == n)
+	is_monomorphic = (n > 1) and (record.num_het == n or record.num_hom_ref == n or record.num_hom_alt == n)
 	# check repeated region
 	FILTER = ",".join(record.FILTER)
 
